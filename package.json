@@ -1,0 +1,17 @@
+{
+  "name": "guardian",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI companion autonomous heartbeat daemon",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2"
+  }
+}

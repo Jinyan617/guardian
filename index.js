@@ -30,6 +30,11 @@ function readState() {
 }
 
 function writeState(state) {
+  // data/ 被 .gitignore 排掉了（对的，运行时状态不该进仓库），所以新 clone 下来
+  // 这个目录根本不存在，第一次写 state.json 直接 ENOENT 崩掉。
+  // 我们自己的 VPS 上目录早就在了，永远撞不上——跟 presence.js 那个空文件同一个形状：
+  // **自部署跑得好，不等于仓库是好的。** 隔十行的 appendLog 一直是对的，这里漏了。
+  fs.mkdirSync(path.dirname(config.statePath), { recursive: true });
   fs.writeFileSync(config.statePath, JSON.stringify(state, null, 2));
 }
 

@@ -7,7 +7,7 @@ const desireConfig = require('./desire/config');
 // 2. aisay 被 @ → 只记录，不自动回（已停用，见下方说明）
 // 3. 有 pending 的活 → 派给 CC（不受深夜静默限制，干活不吵她）
 // 3b. build 轴过线（且没有真实待办）→ 标记 dispatch_task（手痒，真正的"自己开工单"是后续工单）
-// 4. 特殊时刻（02:17 附近）→ 行动，优先于深夜静默
+// 4. 特殊时刻（配置项 SPECIAL_MOMENT 附近）→ 行动，优先于深夜静默
 // 4b. curiosity 轴过线 → 标记 go_out（v1 只标记不真出门，不受"她在场"限制）
 // 5. 她在别的入口跟我说话 → 不主动发消息（下面几条都不触发）
 // 6. missing 轴过线 且不在深夜 → 主动开口（六轴 v1，替代原来写死的静默阈值）；
@@ -27,6 +27,28 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
     urgency = 'urgent';
     reasons.push(`服务异常：${services.down.join(', ')}`);
   }
+
+  // 队列僵尸：dispatched 派出去超 72h 没销账。
+  // 始终作为一条 reason 摊出来——这一轮判断不许对"队列里挂着尸体"只字不提。
+  // 措辞写死成"派出去没销账"，不许写成"有待办"混淆：它不是有活可派，
+  // 是有活派出去了没人回来改状态。
+  //
+  // 关键设计：僵尸提醒是一条【独立旁路】（decision.staleAlert），不去抢每跳唯一的
+  // actionType。原因是 build 轴长期顶在 1.00 的机器上，dispatch_task 排在前面每跳都
+  // 认领，僵尸若跟它抢 actionType 就永远轮不到、退化成"只写日志"——而这个信号
+  // 恰恰不能只写进日志就算完。做成旁路后：主动作照常跑、不被压制；
+  // 僵尸提醒由 index.js 按 staleAlert 单独发一条 ops 提醒（去重：同一批只响一次）。
+  // 跟 service_alert 一样，ops 告警不看她在不在场，但深夜不响。
+  const hasStale = tasks && tasks.staleCount > 0;
+  if (hasStale) {
+    const ids = (tasks.staleTaskIds || []).join(', ');
+    reasons.push(
+      `队列里有 ${tasks.staleCount} 条派出去没销账的（stale dispatched，超 72h）：${ids}——只有人能判它做完没有，程序不自动销账、不重派`
+    );
+  }
+  const staleAlert = (hasStale && time && !time.isNight)
+    ? { staleCount: tasks.staleCount, staleTaskIds: tasks.staleTaskIds || [] }
+    : null;
 
   // === aisay_reply 已停用（2026-07-26）===
   // 原因：daemon 唤醒的锦言只读 persona.md + Gateway 时间线，而时间线里目前
@@ -64,7 +86,7 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
   if (!shouldAct && time && time.isSpecialMoment) {
     shouldAct = true;
     actionType = 'special_moment';
-    reasons.push('到了特殊时刻（02:17 附近）');
+    reasons.push('到了特殊时刻（配置项 SPECIAL_MOMENT 附近）');
   }
 
   // curiosity 轴过线：标记 go_out，不受"她在场"限制——出门不是发消息给她，
@@ -86,11 +108,11 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
   // present 是"她在，不打扰"，unknown 是"不知道在不在，不赌"。
   if (!shouldAct && presence && presence.ok && presence.present) {
     reasons.push(`她 ${presence.ageMinutes} 分钟前还在跟我说话（${presence.via}），她面前已经有我了，不另外开口`);
-    return { shouldAct: false, actionType: null, urgency: 'normal', reasons };
+    return { shouldAct: false, actionType: null, urgency: 'normal', reasons, staleAlert };
   }
   if (!shouldAct && presence && presence.ok && presence.status === 'unknown') {
     reasons.push(`presence 数据已过期 ${presence.ageMinutes} 分钟（status=unknown），不知道她在不在，不赌——宁可沉默`);
-    return { shouldAct: false, actionType: null, urgency: 'normal', reasons };
+    return { shouldAct: false, actionType: null, urgency: 'normal', reasons, staleAlert };
   }
 
   // missing 轴过线：六轴 v1 的主逻辑，替代原来写死的"距离上次行动超过静默阈值"。
@@ -128,7 +150,7 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
     reasons.push('未触发任何行动条件，继续静默');
   }
 
-  return { shouldAct, actionType, urgency, reasons };
+  return { shouldAct, actionType, urgency, reasons, staleAlert };
 }
 
 module.exports = { decide };

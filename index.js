@@ -13,6 +13,7 @@ const { decide } = require('./decide');
 const { act } = require('./act');
 const { dispatch } = require('./dispatch');
 const desireEngine = require('./desire/engine');
+const { sendNotification } = require('./notify');
 
 function readState() {
   try {
@@ -46,8 +47,6 @@ function appendLog(entry) {
 }
 
 async function main() {
-  // 自动帮CC按审批
-  try { require("child_process").execSync("bash ./checks/cc-approval.sh", { timeout: 10000 }); } catch (e) { /* ignore */ }
   const now = new Date();
   const state = readState();
 
@@ -70,10 +69,57 @@ async function main() {
 
   const logEntry = {
     ts: now.toISOString(),
-    checks: { gps, aisay, services, time, tasks: { ok: tasks.ok, hasPending: tasks.hasPending, pendingCount: tasks.pendingCount, taskId: tasks.task?.id || null } },
+    checks: {
+      gps, aisay, services, time,
+      tasks: {
+        ok: tasks.ok,
+        hasPending: tasks.hasPending,
+        pendingCount: tasks.pendingCount,
+        taskId: tasks.task?.id || null,
+        // 僵尸读数单独落，不混进 pendingCount。
+        staleCount: tasks.staleCount || 0,
+        staleTaskIds: tasks.staleTaskIds || [],
+      },
+    },
     desire,
     decision,
   };
+
+  // 队列僵尸：只要有 stale，这一轮就以 WARN 级别进日志（可 grep：[daemon][WARN] 队列僵尸），
+  // 不管本跳的 actionType 最后被谁认领。日志是最起码的"不静默"，
+  // 永远在，不依赖推送有没有发出去。
+  if (tasks.staleCount > 0) {
+    const ids = (tasks.staleTaskIds || []).join(', ');
+    console.warn(`[daemon][WARN] 队列僵尸：${tasks.staleCount} 条 dispatched 派出去超 72h 没销账：${ids}（只有人能判做完没有，不自动销账/重派）`);
+    logEntry.staleQueue = { staleCount: tasks.staleCount, staleTaskIds: tasks.staleTaskIds };
+  }
+
+  // 去重用：同一批僵尸只提醒一次（避免每跳醒一次就响一次她手机）。
+  let newStaleAlertKey = state.staleAlertKey || null;
+
+  // 僵尸提醒 = 独立旁路（decide 里"有僵尸且非深夜"才置位）。
+  // 不跟主动作抢每跳唯一的 actionType——所以 build 轴顶满 / 她不在场都压不掉它，
+  // 它不会退化成"只写日志"。
+  // 正文是自己拼的固定运维文案 → kind:'ops'（notify.js：只有 ops 才允许兜底直发 Bark）。
+  // dry-run：BARK_DRY_RUN=1 时链路照走不真响。
+  if (decision.staleAlert) {
+    const sa = decision.staleAlert;
+    const ids = (sa.staleTaskIds || []).join(', ');
+    const key = [...(sa.staleTaskIds || [])].sort().join('|');
+    if (key && key !== state.staleAlertKey) {
+      const dryRun = !!process.env.BARK_DRY_RUN;
+      const msg = `[daemon] 队列里有 ${sa.staleCount} 条派出去没销账的（>72h）：${ids}。只有你能判它做完没有——去 pending-tasks.json 标 completed 或写清卡在哪。`;
+      const note = await sendNotification(msg, { kind: 'ops', dryRun });
+      logEntry.staleAlert = { fired: true, notification: note, staleTaskIds: sa.staleTaskIds };
+      newStaleAlertKey = key;
+      if (note.dryRun) console.log(`[daemon] 队列僵尸提醒（dry-run，未真响）：${ids}`);
+      else if (note.sent) console.log(`[daemon] 队列僵尸提醒已发（ops）：${ids}`);
+      else console.error(`[daemon] 队列僵尸提醒未送达：${note.error || note.reason || '未知'}`);
+    } else {
+      logEntry.staleAlert = { fired: false, note: '同一批僵尸已提醒过，不重复响', staleTaskIds: sa.staleTaskIds };
+      console.log(`[daemon] 队列僵尸仍在但已提醒过，不重复响：${ids}`);
+    }
+  }
 
   let actionResult = null;
 
@@ -138,6 +184,8 @@ async function main() {
     consecutiveSilent: acted ? 0 : (state.consecutiveSilent || 0) + 1,
     lastGpsEvent: gps.ok ? gps.event : state.lastGpsEvent,
     lastGpsTime: gps.ok ? gps.time : state.lastGpsTime,
+    // 僵尸批次指纹：同一批只响一次；僵尸清空后归零，下次再堆起来还会响。
+    staleAlertKey: tasks.staleCount > 0 ? newStaleAlertKey : null,
   });
 }
 

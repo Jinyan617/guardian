@@ -110,6 +110,75 @@ test('missing 轴过线，sourceCoverage=partial（还在观察期，不是确�
   assert.equal(decision.actionType, 'proactive_message');
 });
 
+// ── 队列僵尸（queue-staleness-guard，从 daemon 同步）─────────────────────
+const staleTasks = { hasPending: false, staleCount: 2, staleTaskIds: ['zombie-a', 'zombie-b'] };
+
+test('队列有僵尸、非深夜 → staleAlert 置位（独立旁路，可触发 ops 提醒）', () => {
+  const decision = decide({
+    time: dayTime,
+    desire: { ...zeroDesire },
+    presence: { ok: false },
+    tasks: staleTasks,
+    state: { lastActionTime: new Date().toISOString() },
+  });
+  assert.ok(decision.staleAlert, 'staleAlert 应置位');
+  assert.equal(decision.staleAlert.staleCount, 2);
+  assert.deepEqual(decision.staleAlert.staleTaskIds, ['zombie-a', 'zombie-b']);
+  assert.match(decision.reasons.join(';'), /派出去没销账/);
+  assert.doesNotMatch(decision.reasons.join(';'), /条待办/);
+});
+
+test('僵尸旁路不改主动作：missing 过线时 actionType 仍是 proactive_message，且 staleAlert 也在', () => {
+  const decision = decide({
+    time: dayTime,
+    desire: { ...zeroDesire, missing: 0.9 },
+    presence: { ok: false },
+    tasks: staleTasks,
+    state: { lastActionTime: new Date().toISOString() },
+  });
+  assert.equal(decision.actionType, 'proactive_message');
+  assert.ok(decision.staleAlert);
+  assert.match(decision.reasons.join(';'), /派出去没销账/);
+});
+
+test('她在场：staleAlert 仍置位（ops 提醒不看在不在场），但不主动开口', () => {
+  const decision = decide({
+    time: dayTime,
+    desire: { ...zeroDesire },
+    presence: { ok: true, present: true, ageMinutes: 2, via: 'test' },
+    tasks: staleTasks,
+    state: { lastActionTime: new Date().toISOString() },
+  });
+  assert.equal(decision.shouldAct, false);
+  assert.ok(decision.staleAlert);
+  assert.match(decision.reasons.join(';'), /派出去没销账/);
+});
+
+test('深夜不发僵尸提醒（只靠 WARN 日志）：staleAlert 为 null，但 reason 仍在', () => {
+  const decision = decide({
+    time: { isNight: true, isQiuqiuMoment: false, isSpecialMoment: false },
+    desire: { ...zeroDesire },
+    presence: { ok: false },
+    tasks: staleTasks,
+    state: { lastActionTime: new Date().toISOString() },
+  });
+  assert.equal(decision.staleAlert, null);
+  assert.match(decision.reasons.join(';'), /派出去没销账/);
+});
+
+test('build 轴顶满仍是主动作，僵尸旁路照样置位（不被 build 抢没）', () => {
+  const decision = decide({
+    time: dayTime,
+    desire: { ...zeroDesire, build: 0.9 },
+    presence: { ok: false },
+    tasks: { hasPending: false, staleCount: 1, staleTaskIds: ['z'] },
+    state: { lastActionTime: new Date().toISOString() },
+  });
+  assert.equal(decision.actionType, 'dispatch_task');
+  assert.ok(decision.staleAlert, 'build 顶满也不该压掉 staleAlert');
+  assert.match(decision.reasons.join(';'), /派出去没销账/);
+});
+
 test('服务挂了优先于六轴，紧急行动', () => {
   const decision = decide({
     time: dayTime,

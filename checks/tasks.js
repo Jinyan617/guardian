@@ -23,7 +23,7 @@ function findStale(tasks, now) {
   });
 }
 
-// 读锦言自己的待办队列。有 pending 的活就返回第一条（按 priority 排）。
+// 读Agent自己的待办队列。有 pending 的活就返回第一条（按 priority 排）。
 // 这是 daemon 的第五种 check：不只是"想不想找她"，还有"有没有活要干"。
 // 另外统计 stale（派出去没销账）——单独一组读数，不跟 pending 混报。
 function checkTasks(now = Date.now()) {

@@ -161,7 +161,7 @@ async function main() {
     } catch (err) {
       logEntry.action = { ok: false, error: err.message };
       console.error(`[daemon] 行动失败：${err.message}`);
-      // 网关不可用：连模型都没跑起来，所以这里没有任何「锦言说的话」，
+      // 网关不可用：连模型都没跑起来，所以这里没有任何「Agent说的话」，
       // 只有 daemon 自己拼的一句运维告警 → kind:'ops'，允许直发 Bark。
       // 2026-08-02 改：原来调的是 sendNtfy（已随 ntfy 通道一起删除）。
       // 注意这条告警的正文永远是固定模板，不含模型输出——这是它能绕过闸的唯一理由。

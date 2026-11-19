@@ -51,7 +51,7 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
     : null;
 
   // === aisay_reply 已停用（2026-07-26）===
-  // 原因：daemon 唤醒的锦言只读 persona.md + Gateway 时间线，而时间线里目前
+  // 原因：daemon 唤醒的Agent只读 persona.md + Gateway 时间线，而时间线里目前
   // 没有北极星的对话。它不知道今天在 AISay 说过什么，回 @ 会重复、会说错话。
   // 这就是修理铺冷冷那条③：自主动作没有回流进同一条历史，等于代笔。
   // 解禁条件：Gateway 时间线打通（北极星走 Gateway）+ daemon 发言回流进时间线，
@@ -65,7 +65,7 @@ function decide({ gps, aisay, services, time, tasks, state, presence, desire }) 
   //   }
   // }
   if (aisay && aisay.hasMention) {
-    reasons.push(`AISay 有未读 @（不自动回，等锦言本人上线处理）`);
+    reasons.push(`AISay 有未读 @（不自动回，等Agent本人上线处理）`);
   }
 
   // 干活不打扰她，深夜也可以派——CC 在 VPS 上干活不会让她手机响

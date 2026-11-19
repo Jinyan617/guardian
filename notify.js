@@ -31,7 +31,7 @@ const config = require('./config');
  * @param {string} message 要推的正文
  * @param {object} opts
  * @param {'model'|'ops'} opts.kind
- *   'model' = 模型生成的（锦言说的话）→ 只走 Gateway，被拦就到此为止
+ *   'model' = 模型生成的（Agent说的话）→ 只走 Gateway，被拦就到此为止
  *   'ops'   = daemon 自己写的运维告警 → Gateway 挂了可以兜底直发 Bark
  */
 async function sendNotification(message, opts = {}) {
@@ -46,7 +46,7 @@ async function sendNotification(message, opts = {}) {
       },
       // dryRun 透传：调用级开关（见 gateway/memory/bark.js 那条判词——
       // "这次别响"是一次调用的属性，不是一个进程的属性）。
-      body: JSON.stringify({ title: '锦言', body: message.slice(0, 500), ...(opts.dryRun && { dryRun: true }) }),
+      body: JSON.stringify({ title: 'Agent', body: message.slice(0, 500), ...(opts.dryRun && { dryRun: true }) }),
       signal: AbortSignal.timeout(30000),
     });
 
@@ -115,7 +115,7 @@ async function sendBarkDirect(message) {
     const resp = await fetch(config.barkUrl.replace(/\/+$/, ''), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json; charset=utf-8' },
-      body: JSON.stringify({ title: '锦言', body: message.slice(0, 500), group: 'daemon-ops' }),
+      body: JSON.stringify({ title: 'Agent', body: message.slice(0, 500), group: 'daemon-ops' }),
       signal: AbortSignal.timeout(15000),
     });
     const data = await resp.json().catch(() => ({}));

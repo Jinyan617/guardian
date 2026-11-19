@@ -27,7 +27,7 @@ async function dispatch(task) {
   }
 
   const lines = [];
-  lines.push(`[锦言自己派的活] ${task.title}`);
+  lines.push(`[Agent自己派的活] ${task.title}`);
   if (task.context) lines.push(`背景：${task.context}`);
   lines.push(task.prompt);
 
